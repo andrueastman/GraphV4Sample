@@ -5,6 +5,7 @@ using Microsoft.Graph;
 using System;
 using System.Threading.Tasks;
 using System.Net;
+using System.Text.Json;
 
 namespace GraphV4Sample
 {
@@ -12,57 +13,71 @@ namespace GraphV4Sample
     {
         public static async Task Main(string[] _)
         {
-            string clientId = "Insert_Client_ID_here";
-            string[] scopes = new[] { "User.Read", "User.ReadWrite" };
-
-            // Create the client with the TokenCredential
-            InteractiveBrowserCredential interactiveBrowserCredential = new InteractiveBrowserCredential(clientId);
-            GraphServiceClient graphServiceClient = new GraphServiceClient(interactiveBrowserCredential, scopes);
-
+            GraphServiceClient graphServiceClient = GetAuthenticatedGraphServiceClient();
+            // Serialization demo
+            await SerilizationDemo(graphServiceClient);
             // List user info
-            await ListUserInfo(graphServiceClient);
-
-            // Update user
-            await UpdateUserWithGraphResponse(graphServiceClient);
-
-            // List user info again to confirm update
-            await ListUserInfo(graphServiceClient);
+            await GraphResponseDemo(graphServiceClient);
 
         }
 
-        public static async Task ListUserInfo(GraphServiceClient graphServiceClient)
+        /// <summary>
+        /// Demo of authentication changes
+        /// </summary>
+        /// <returns></returns>
+        public static GraphServiceClient GetAuthenticatedGraphServiceClient()
+        {
+            // Other TokenCredentials examples are available at https://github.com/microsoftgraph/msgraph-sdk-dotnet/blob/dev/docs/tokencredentials.md
+            string[] scopes = new[] { "User.Read", "User.ReadWrite" };
+            InteractiveBrowserCredentialOptions interactiveBrowserCredentialOptions = new InteractiveBrowserCredentialOptions()
+            {
+                ClientId = "CLIENT_ID"
+            };
+            InteractiveBrowserCredential interactiveBrowserCredential = new InteractiveBrowserCredential(interactiveBrowserCredentialOptions);
+            // GraphServiceClient constructor accepts tokenCredential
+            GraphServiceClient graphClient = new GraphServiceClient(interactiveBrowserCredential, scopes);
+            return graphClient;
+        }
+
+        /// <summary>
+        /// Demo of changes in serialization
+        /// </summary>
+        /// <param name="graphServiceClient">The <see cref="GraphServiceClient"/> use</param>
+        /// <returns></returns>
+        private static async Task SerilizationDemo(GraphServiceClient graphServiceClient)
+        {
+            // GET user info the normal way
+            var user = await graphServiceClient.Me.Request().GetAsync();
+            Console.WriteLine("Display Name: " + user.DisplayName);
+
+            // Reading values from the Additional Data
+            if (user.AdditionalData.TryGetValue("@odata.context", out object oDataContext))
+            {
+                string context = ((JsonElement)oDataContext).GetString();
+                Console.WriteLine("OData Context: " + context);
+            }
+
+            // using the inbuilt serializer to serialize
+            var serializedPayload = graphServiceClient.HttpProvider.Serializer.SerializeObject(user);
+            // using the inbuilt serializer to deserailize
+            var deserializedObject = graphServiceClient.HttpProvider.Serializer.DeserializeObject<User>(serializedPayload);
+        }
+
+        /// <summary>
+        /// Demo of changes in the GraphResponse
+        /// </summary>
+        /// <param name="graphServiceClient">The <see cref="GraphServiceClient"/> use</param>
+        /// <returns></returns>
+        public static async Task GraphResponseDemo(GraphServiceClient graphServiceClient)
         {
             // GET user info the normal way
             Console.WriteLine("Fetching user info ...");
-            var user = await graphServiceClient.Me.Request().GetAsync();
+            var user = await graphServiceClient.Me.Request().GetAsync();// No headers/status code in additional data
             Console.WriteLine("Display Name: " + user.DisplayName);
-            Console.WriteLine("User Principal Name: " + user.UserPrincipalName);
-            Console.WriteLine("Office Location: " + user.OfficeLocation);
             Console.WriteLine(Environment.NewLine);
 
-            // GET user info with graph response.
-            Console.WriteLine("Fetching user info (with GraphResponse)...");
-            var userResponse = await graphServiceClient.Me.Request().GetResponseAsync();
-
-            // Deserialize the response
-            if (userResponse.StatusCode == HttpStatusCode.OK)
-            {
-                Console.WriteLine(userResponse.StatusCode);
-                var userObject = await userResponse.GetResponseObjectAsync();
-                Console.WriteLine("Display Name: " + userObject.DisplayName);
-                Console.WriteLine("User Principal Name: " + userObject.UserPrincipalName);
-                Console.WriteLine("Office Location: " + userObject.OfficeLocation);
-                Console.WriteLine(Environment.NewLine);
-            }
-        }
-
-        public static async Task UpdateUserWithGraphResponse(GraphServiceClient graphServiceClient)
-        {
             // User object pulled from https://docs.microsoft.com/en-us/graph/api/user-update?view=graph-rest-1.0&tabs=csharp#request
-            var user = new User
-            {
-                OfficeLocation = "181/21111"
-            };
+            user.OfficeLocation = "181/21111";
 
             var userResponse = await graphServiceClient.Me
                 .Request()
@@ -73,7 +88,7 @@ namespace GraphV4Sample
                 ? "User Updated successfully"
                 : "Failed to update user. Status code is not a 204: No Content");
 
-            Console.WriteLine(Environment.NewLine);
+            //var responseHeaders = userResponse.HttpHeaders;
         }
     }
 }
